@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>AI Mail Assistant</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<style>
+body{overflow:auto;}
+.left-panel{height:100vh;overflow:auto;border-right:1px solid #ddd;}
+.col-md-9{
+  height:100vh;
+  overflow-y:auto;
+}
+
+.email-item:hover{background:#f2f2f2;}
+</style>
+
+</head>
+
+<body>
+
+<div class="container-fluid">
+<div class="row">
+
+<!-- LEFT PANEL -->
+<div class="col-md-3 left-panel p-3">
+
+<h5>Inbox</h5>
+
+<b>Filter by Urgency</b><br>
+<label><input id="fLow" type="checkbox" checked> Low</label><br>
+<label><input id="fMed" type="checkbox" checked> Medium</label><br>
+<label><input id="fHigh" type="checkbox" checked> High</label>
+<hr>
+
+{% for e in emails %}
+<div class="email-item p-2 border-bottom"
+     data-id="{{e.id}}"
+     data-urgency="{{e.urgency}}"
+     onclick="openEmail('{{e.id}}')"
+     style="cursor:pointer">
+
+<b>{{e.subject}}</b><br>
+<small>{{e.from}}</small><br>
+<small>{{e.date}}</small>
+
+</div>
+{% endfor %}
+
+</div>
+
+<!-- RIGHT PANEL -->
+<div class="col-md-9 p-4">
+
+<span id="urgencyBadge" class="badge bg-warning">Medium</span>
+<span id="sentimentBadge" class="badge bg-secondary">Neutral</span>
+
+<h3 id="subject" class="mt-2">Select an Email</h3>
+<p id="from"></p>
+
+<div id="body" class="border p-3 mb-3" style="height:250px;overflow:auto;"></div>
+
+<!-- 🌍 LANGUAGE SELECTOR (ONLY ADDITION) -->
+<label><b>Reply Language</b></label>
+<select id="lang" class="form-select mb-3">
+<option value="English">English</option>
+<option value="Hindi">Hindi</option>
+<option value="Telugu">Telugu</option>
+<option value="Kannada">Kannada</option>
+<option value="Malayalam">Malayalam</option>
+</select>
+
+<label><b>Suggested Reply</b></label>
+<textarea id="reply" class="form-control" rows="8"></textarea><br>
+
+<button onclick="sendReply()" class="btn btn-primary">
+Approve & Send
+</button>
+
+</div>
+</div>
+</div>
+
+<script>
+
+let currentMsgId=null;
+let currentUrgency="Medium";
+
+/* =========================
+   OPEN EMAIL
+========================= */
+async function openEmail(id){
+
+currentMsgId=id;
+
+// 🌍 ONLY CHANGE: send language
+let lang = document.getElementById("lang").value;
+
+const r=await fetch(`/analyze/${id}?lang=${lang}`);
+const d=await r.json();
+
+document.getElementById("subject").innerText=d.subject||"No subject";
+document.getElementById("from").innerText="From: "+(d.from||"Unknown");
+document.getElementById("body").innerText=d.body||"No content";
+document.getElementById("reply").value=d.reply||"";
+
+// urgency from left list item
+let selected = document.querySelector(`[data-id="${id}"]`);
+let listUrgency = selected.dataset.urgency;
+
+updateUrgency(listUrgency);
+currentUrgency = listUrgency;
+
+// sentiment still from AI
+updateSentiment(d.sentiment||"Neutral");
+
+}
+
+/* =========================
+   BADGES
+========================= */
+function updateUrgency(u){
+let b=document.getElementById("urgencyBadge");
+b.innerText=u;
+b.className="badge "+(
+u=="High"?"bg-danger":
+u=="Low"?"bg-success":
+"bg-warning");
+}
+
+function updateSentiment(s){
+let b=document.getElementById("sentimentBadge");
+b.innerText=s;
+b.className="badge "+(
+s=="Positive"?"bg-success":
+s=="Negative"?"bg-danger":
+"bg-secondary");
+}
+
+/* =========================
+   SEND REPLY
+========================= */
+async function sendReply(){
+
+if(!currentMsgId)
+return alert("Select email first");
+
+await fetch("/send_reply",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+msg_id:currentMsgId,
+reply:document.getElementById("reply").value
+})
+});
+
+alert("✅ Reply Sent!");
+}
+
+/* =========================
+   FILTER (UNCHANGED)
+========================= */
+document.querySelectorAll("#fLow,#fMed,#fHigh")
+.forEach(cb => cb.addEventListener("change", filterEmails));
+
+function filterEmails(){
+
+let low = document.getElementById("fLow").checked;
+let med = document.getElementById("fMed").checked;
+let high = document.getElementById("fHigh").checked;
+
+let firstVisible = null;
+
+document.querySelectorAll(".email-item").forEach(item => {
+
+let urgency = item.dataset.urgency;
+
+let show = false;
+
+if(urgency === "Low" && low) show = true;
+if(urgency === "Medium" && med) show = true;
+if(urgency === "High" && high) show = true;
+
+item.style.display = show ? "block" : "none";
+
+if(show && !firstVisible){
+    firstVisible = item;
+}
+
+});
+
+if(firstVisible){
+    openEmail(firstVisible.dataset.id);
+}
+else{
+    clearRightPanel();
+}
+
+}
+
+function clearRightPanel(){
+document.getElementById("subject").innerText="Select an Email";
+document.getElementById("from").innerText="";
+document.getElementById("body").innerText="";
+document.getElementById("reply").value="";
+
+updateUrgency("Medium");
+updateSentiment("Neutral");
+
+currentMsgId=null;
+}
+
+/* 🌍 Regenerate reply if language changes */
+document.getElementById("lang").addEventListener("change", ()=>{
+    if(currentMsgId){
+        openEmail(currentMsgId);
+    }
+});
+
+</script>
+
+</body>
+</html>
